@@ -1,25 +1,115 @@
 ---
 title: "Reproducible Research: Peer Assessment 1"
 output: 
-  html_document:
-    keep_md: true
+html_document:
+keep_md: true
 ---
 
+```{r}
+library(knitr)
+library(lattice)
+library(ggplot2)
+opts_chunk$set(echo=TRUE, results='hold')
+```
 
 ## Loading and preprocessing the data
-
-
+```{r}
+file <- 'activity.csv'
+data <- data.frame(read.csv(file=file, header=T, stringsAsFactors=F))
+data$date <- as.Date(data$date, format='%Y-%m-%d')
+data$interval <- as.factor(data$interval)
+```
 
 ## What is mean total number of steps taken per day?
+```{r}
+total_steps <- aggregate(steps ~ date, data=data, sum, na.rm=T)
+hist(total_steps$steps, main='Total Steps Per Day', xlab='Steps', col='Blue')
+mean_total_steps <- mean(total_steps$steps)
+median_total_steps <- median(total_steps$steps)
 
+print (paste('The Mean total number of steps is', mean_total_steps))
+print (paste('The Median total number of steps is', median_total_steps))
+```
 
 
 ## What is the average daily activity pattern?
-
-
+```{r}
+interval_steps <- aggregate(steps ~ interval, data, mean)
+plot(interval_steps$interval, interval_steps$steps, type='l', xlab='Interval', ylab='Number of Steps', main='Average Number of Steps per Day by Interval')
+max_interval <- interval_steps[which.max(interval_steps$steps), 1]
+print(paste('Maximum number of steps across all the days in the dataset is', max_interval))
+```
 
 ## Imputing missing values
+```{r}
+total_missing_values <- sum(is.na(data$steps))
+# print(paste('Total missing values:', total_missing_values))
 
+na_filled <- function(x, val) {
+        na_index <- which(is.na(x$steps))
+        na_replace <- unlist(lapply(na_index, FUN=function(idx){
+                interval = x[idx,]$interval
+                val[val$interval == interval,]$steps
+        }))
+        fill_steps <- x$steps
+        fill_steps[na_index] <- na_replace
+        fill_steps
+}
 
+data_filled <- data.frame(steps = na_filled(data, interval_steps), date = data$date, interval = data$interval)
+str(data_filled)
+
+filled_steps_per_day <- aggregate(steps ~ date, data_filled, sum)
+colnames(filled_steps_per_day) <- c("date","steps")
+
+# plot
+ggplot(filled_steps_per_day, aes(x = steps)) + 
+    geom_histogram() + 
+    labs(title="Steps Taken per Day", x = "Steps per Day", y = "Times in a day(Count)") + 
+    theme_bw() 
+mean_filled <- mean(filled_steps_per_day$steps, na.rm=T)
+median_filled <- median(filled_steps_per_day$steps, na.rm=T)
+
+# impact
+print('There are differences in the Pre-filled data')
+print(paste('Pre-filled Mean:', mean_total_steps))
+print(paste('Pre-filled Median:', median_total_steps))
+print('---')
+print('Thee Filled data is equal')
+print(paste('Filled Mean:', mean_filled))
+print(paste('Filled Median:', median_filled))
+```
 
 ## Are there differences in activity patterns between weekdays and weekends?
+```{r}
+f_weekday_steps <- function(x) {
+    f_weekday_steps <- aggregate(x$steps, by=list(interval = x$interval), FUN=mean, na.rm=T)
+    # convert to integers for plotting
+    f_weekday_steps$interval <- as.integer(levels(f_weekday_steps$interval)[f_weekday_steps$interval])
+    colnames(f_weekday_steps) <- c("interval", "steps")
+    f_weekday_steps
+}
+weekday_data <- function(x) {
+    x$weekday <- as.factor(weekdays(x$date))
+    weekend_data <- subset(x, weekday %in% c("Saturday","Sunday"))
+    weekday_data <- subset(x, !weekday %in% c("Saturday","Sunday"))
+
+    weekend_steps <- f_weekday_steps(weekend_data)
+    weekday_steps <- f_weekday_steps(weekday_data)
+
+    weekend_steps$dayofweek <- rep("weekend", nrow(weekend_steps))
+    weekday_steps$dayofweek <- rep("weekday", nrow(weekday_steps))
+
+    data_by_weekdays <- rbind(weekend_steps, weekday_steps)
+    data_by_weekdays$dayofweek <- as.factor(data_by_weekdays$dayofweek)
+    data_by_weekdays
+}
+
+data_weekdays <- weekday_data(data_filled)
+
+ggplot(data_weekdays, aes(x=interval, y=steps)) + 
+    geom_line() + 
+    facet_wrap(~ dayofweek, nrow=2, ncol=1) +
+    labs(x="Interval", y="Number of steps") +
+    theme_bw()
+```
